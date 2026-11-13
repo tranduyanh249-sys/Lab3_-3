@@ -1,0 +1,538 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Hệ thống giám sát và cảnh báo cháy</title>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 25px;
+    font-family: Arial, sans-serif;
+    background: #111827;
+    color: #f1f5f9;
+}
+
+.container {
+    max-width: 1100px;
+    margin: auto;
+}
+
+header {
+    text-align: center;
+    padding: 20px;
+    margin-bottom: 20px;
+    background: #1f2937;
+    border-radius: 14px;
+    border-bottom: 3px solid #f97316;
+}
+
+header h1 {
+    color: #fb923c;
+    margin-bottom: 10px;
+}
+
+header p {
+    color: #9ca3af;
+}
+
+.connection {
+    text-align: center;
+    padding: 12px;
+    margin-bottom: 25px;
+    border-radius: 8px;
+    background: #263449;
+    color: #facc15;
+}
+
+.section-title {
+    color: #fb923c;
+    margin: 25px 0 15px;
+}
+
+.data-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+}
+
+.data-card {
+    background: #1f2937;
+    padding: 22px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #374151;
+}
+
+.data-card h3 {
+    color: #9ca3af;
+    font-size: 16px;
+}
+
+.value {
+    font-size: 36px;
+    font-weight: bold;
+    color: #fb923c;
+    margin: 15px 0;
+}
+
+.unit {
+    color: #9ca3af;
+}
+
+.warning {
+    margin-top: 15px;
+    padding: 10px;
+    background: #263449;
+    border-radius: 7px;
+    color: #4ade80;
+}
+
+.warning.danger {
+    background: #7f1d1d;
+    color: white;
+}
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+}
+
+.chart-box {
+    background: #1f2937;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #374151;
+}
+
+.chart-box h3 {
+    text-align: center;
+    color: #e5e7eb;
+}
+
+canvas {
+    max-height: 250px;
+}
+
+.control-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+}
+
+.control-box {
+    background: #1f2937;
+    padding: 22px;
+    text-align: center;
+    border-radius: 12px;
+    border: 1px solid #374151;
+}
+
+.control-box h3 {
+    color: #fb923c;
+}
+
+button {
+    padding: 11px 17px;
+    margin: 5px 3px;
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.2s;
+}
+
+button:hover {
+    opacity: 0.8;
+    transform: translateY(-2px);
+}
+
+.btn-on {
+    background: #16a34a;
+    color: white;
+}
+
+.btn-off {
+    background: #dc2626;
+    color: white;
+}
+
+.btn-auto {
+    background: #475569;
+    color: white;
+}
+
+.command-status {
+    margin-top: 15px;
+    color: #facc15;
+}
+
+footer {
+    text-align: center;
+    color: #64748b;
+    margin-top: 30px;
+    font-size: 13px;
+}
+
+@media(max-width: 700px) {
+    .data-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-grid,
+    .control-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <header>
+        <h1>FIRE SAFETY SYSTEM</h1>
+        <p>HỆ THỐNG GIÁM SÁT VÀ CẢNH BÁO CHÁY QUA INTERNET</p>
+    </header>
+
+    <div class="connection" id="connection">
+        Trạng thái MQTT: Đang kết nối...
+    </div>
+
+    <!-- KHU VUC DU LIEU -->
+    <h2 class="section-title">01. THÔNG SỐ GIÁM SÁT</h2>
+
+    <div class="data-grid">
+
+        <div class="data-card">
+            <h3>Nồng độ khí Gas</h3>
+            <div class="value" id="gas">0</div>
+            <div class="unit">Giá trị ADC</div>
+            <div class="warning" id="gasWarning">
+                Trạng thái: Bình thường
+            </div>
+        </div>
+
+        <div class="data-card">
+            <h3>Nhiệt độ môi trường</h3>
+            <div class="value" id="temp">0 °C</div>
+            <div class="unit">Đơn vị: Celsius</div>
+            <div class="warning" id="tempWarning">
+                Trạng thái: Bình thường
+            </div>
+        </div>
+
+        <div class="data-card">
+            <h3>Độ ẩm môi trường</h3>
+            <div class="value" id="hum">0 %</div>
+            <div class="unit">Đơn vị: RH</div>
+            <div class="warning">
+                Dữ liệu từ cảm biến DHT22
+            </div>
+        </div>
+
+    </div>
+
+    <!-- KHU VUC BIEU DO -->
+    <h2 class="section-title">02. BIỂU ĐỒ THEO DÕI</h2>
+
+    <div class="chart-grid">
+
+        <div class="chart-box">
+            <h3>Biến thiên nồng độ khí Gas</h3>
+            <canvas id="gasChart"></canvas>
+        </div>
+
+        <div class="chart-box">
+            <h3>Biến thiên nhiệt độ</h3>
+            <canvas id="tempChart"></canvas>
+        </div>
+
+    </div>
+
+    <!-- KHU VUC DIEU KHIEN -->
+    <h2 class="section-title">03. ĐIỀU KHIỂN THIẾT BỊ</h2>
+
+    <div class="control-grid">
+
+        <div class="control-box">
+            <h3>HỆ THỐNG QUẠT</h3>
+
+            <button class="btn-on"
+                onclick="sendCommand('fan','ON')">
+                BẬT
+            </button>
+
+            <button class="btn-off"
+                onclick="sendCommand('fan','OFF')">
+                TẮT
+            </button>
+
+            <button class="btn-auto"
+                onclick="sendCommand('fan','AUTO')">
+                TỰ ĐỘNG
+            </button>
+
+            <p class="command-status" id="fanStatus">
+                Chế độ: Chưa thiết lập
+            </p>
+        </div>
+
+        <div class="control-box">
+            <h3>HỆ THỐNG MÁY BƠM</h3>
+
+            <button class="btn-on"
+                onclick="sendCommand('pump','ON')">
+                BẬT
+            </button>
+
+            <button class="btn-off"
+                onclick="sendCommand('pump','OFF')">
+                TẮT
+            </button>
+
+            <button class="btn-auto"
+                onclick="sendCommand('pump','AUTO')">
+                TỰ ĐỘNG
+            </button>
+
+            <p class="command-status" id="pumpStatus">
+                Chế độ: Chưa thiết lập
+            </p>
+        </div>
+
+    </div>
+
+    <footer>
+        HỆ THỐNG GIÁM SÁT CHÁY SỬ DỤNG ESP32 - MQTT
+    </footer>
+
+</div>
+
+<script>
+
+// ================= MQTT =================
+
+const broker = "wss://broker.emqx.io:8084/mqtt";
+
+const client = mqtt.connect(broker);
+
+const sensorTopic = "hoang/fire/sensor";
+const fanTopic = "hoang/fire/cmd/fan";
+const pumpTopic = "hoang/fire/cmd/pump";
+
+client.on("connect", function() {
+
+    document.getElementById("connection").innerText =
+        "MQTT: ĐÃ KẾT NỐI THÀNH CÔNG";
+
+    client.subscribe(sensorTopic);
+
+});
+
+client.on("reconnect", function() {
+    document.getElementById("connection").innerText =
+        "MQTT: ĐANG KẾT NỐI LẠI...";
+});
+
+client.on("offline", function() {
+    document.getElementById("connection").innerText =
+        "MQTT: MẤT KẾT NỐI";
+});
+
+client.on("error", function() {
+    document.getElementById("connection").innerText =
+        "MQTT: LỖI KẾT NỐI";
+});
+
+// ================= KHOI TAO BIEU DO =================
+
+function createChart(id, name, color) {
+
+    return new Chart(document.getElementById(id), {
+
+        type: "line",
+
+        data: {
+            labels: [],
+            datasets: [{
+                label: name,
+                data: [],
+                borderColor: color,
+                backgroundColor: color + "22",
+                borderWidth: 2,
+                fill: true,
+                tension: 0.35,
+                pointRadius: 2
+            }]
+        },
+
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+
+            scales: {
+                x: {
+                    ticks: {
+                        color: "#cbd5e1",
+                        maxTicksLimit: 6
+                    },
+                    grid: {
+                        color: "#374151"
+                    }
+                },
+
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: "#cbd5e1"
+                    },
+                    grid: {
+                        color: "#374151"
+                    }
+                }
+            },
+
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#f1f5f9"
+                    }
+                }
+            }
+        }
+    });
+}
+
+const gasChart = createChart(
+    "gasChart",
+    "Nồng độ Gas",
+    "#fb923c"
+);
+
+const tempChart = createChart(
+    "tempChart",
+    "Nhiệt độ (°C)",
+    "#38bdf8"
+);
+
+// ================= CAP NHAT BIEU DO =================
+
+function updateChart(chart, value) {
+
+    const currentTime = new Date().toLocaleTimeString();
+
+    chart.data.labels.push(currentTime);
+    chart.data.datasets[0].data.push(value);
+
+    if (chart.data.labels.length > 20) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+    }
+
+    chart.update("none");
+}
+
+// ================= NHAN DU LIEU SENSOR =================
+
+client.on("message", function(topic, message) {
+
+    if (topic !== sensorTopic) return;
+
+    try {
+
+        const data = JSON.parse(message.toString());
+
+        // Hien thi thong so
+        document.getElementById("gas").innerText =
+            data.gas;
+
+        document.getElementById("temp").innerText =
+            data.temp + " °C";
+
+        document.getElementById("hum").innerText =
+            data.hum + " %";
+
+        // Cap nhat canh bao Gas
+        const gasWarning = document.getElementById("gasWarning");
+
+        if (data.gas > 2000) {
+            gasWarning.innerText = "CẢNH BÁO: GAS VƯỢT NGƯỠNG!";
+            gasWarning.classList.add("danger");
+        } else {
+            gasWarning.innerText = "Trạng thái: Bình thường";
+            gasWarning.classList.remove("danger");
+        }
+
+        // Cap nhat canh bao nhiet do
+        const tempWarning = document.getElementById("tempWarning");
+
+        if (data.temp > 50) {
+            tempWarning.innerText = "CẢNH BÁO: NHIỆT ĐỘ CAO!";
+            tempWarning.classList.add("danger");
+        } else {
+            tempWarning.innerText = "Trạng thái: Bình thường";
+            tempWarning.classList.remove("danger");
+        }
+
+        // Cap nhat bieu do
+        updateChart(gasChart, data.gas);
+        updateChart(tempChart, data.temp);
+
+    } catch(error) {
+        console.log("Loi du lieu MQTT:", error);
+    }
+});
+
+// ================= GUI LENH DIEU KHIEN =================
+
+function sendCommand(device, command) {
+
+    const topic = device === "fan" ?
+        fanTopic : pumpTopic;
+
+    if (client.connected) {
+
+        client.publish(topic, command);
+
+        const statusElement = document.getElementById(
+            device + "Status"
+        );
+
+        let commandText = "";
+
+        if (command === "ON") {
+            commandText = "ĐÃ GỬI LỆNH: BẬT";
+        }
+        else if (command === "OFF") {
+            commandText = "ĐÃ GỬI LỆNH: TẮT";
+        }
+        else {
+            commandText = "ĐÃ CHUYỂN SANG CHẾ ĐỘ TỰ ĐỘNG";
+        }
+
+        statusElement.innerText = commandText;
+
+    } else {
+
+        alert("MQTT chưa kết nối! Không thể gửi lệnh.");
+
+    }
+}
+
+</script>
+
+</body>
+</html>
